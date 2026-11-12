@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101827">
+<title>IO Switcher Web</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#121d2e;--panel2:#18263a;--line:#2a3b52;--txt:#edf4ff;--muted:#9eb0c8;--blue:#4c9aff;--green:#36c98f;--red:#ff6b72;--amber:#ffc56b}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#0b1220,#111d30);color:var(--txt);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:24px max(20px,calc((100% - 1100px)/2));border-bottom:1px solid var(--line);background:#0b1220cc}
+h1{font-size:25px;margin:0 0 4px}header p{margin:0;color:var(--muted)}
+main{max-width:1100px;margin:24px auto;padding:0 18px 48px;display:grid;gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 12px 30px #0002}
+h2{font-size:17px;margin:0 0 14px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+button,select,input,textarea{font:inherit;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);padding:10px 12px}
+button{cursor:pointer;font-weight:650}button.primary{background:var(--blue);border-color:var(--blue);color:#071426}button:disabled{opacity:.45;cursor:not-allowed}
+button.power-on{background:#123b32;border-color:#26785f;color:#8ff0c5}
+button.power-off{background:#42232a;border-color:#87404b;color:#ffb4bb}
+.power-panel{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.power-panel button{min-height:58px;font-size:17px}
+@media(max-width:480px){.power-panel{grid-template-columns:1fr}}
+.pill{border:1px solid var(--line);border-radius:999px;padding:5px 10px;color:var(--muted);font-size:13px}
+.status{color:var(--amber)}.status.ok{color:var(--green)}.status.err{color:var(--red)}
+small,.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+label{display:block;color:var(--muted);font-size:13px;margin:10px 0 5px}
+select,input,textarea{width:100%}textarea{min-height:88px;resize:vertical;font-family:ui-monospace,monospace}
+.device,.service,.char{padding:12px;border:1px solid var(--line);border-radius:11px;margin-top:8px;background:#0e1928}
+.device strong,.char strong{display:block}.service-title{font-weight:700;color:#cde1ff}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.log{height:145px;overflow:auto;background:#08111d;border:1px solid var(--line);border-radius:10px;padding:10px;font:12px/1.5 ui-monospace,monospace;color:#b7c9df;white-space:pre-wrap}
+.warning{border-left:3px solid var(--amber);padding:10px 12px;background:#2a2418;border-radius:8px;color:#f6d9a4}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:6px;font-size:13px}.kv span:nth-child(odd){color:var(--muted)}
+@media(max-width:720px){.grid{grid-template-columns:1fr}header{padding:20px}main{margin-top:14px}}
+</style>
+</head>
+<body>
+<header><h1>IO Switcher Web</h1><p>브라우저에서 BLE 장치를 검색하고 GATT 서비스를 확인·읽기·쓰기하는 웹 클라이언트</p></header>
+<main>
+<section class="card">
+ <h2>1. 장치 연결</h2>
+ <div class="row">
+  <button id="scan" class="primary">Bluetooth 장치 선택</button>
+  <button id="disconnect" disabled>연결 해제</button>
+  <span id="state" class="pill status">연결되지 않음</span>
+ </div>
+ <div id="deviceInfo" class="device muted">아직 선택한 장치가 없습니다.</div>
+ <p class="muted">Chrome 또는 Edge 최신 버전에서 사용하세요. Bluetooth 연결은 HTTPS 또는 localhost에서만 동작합니다.</p>
+</section>
+
+<section class="card">
+ <h2>2. 서비스 및 특성 탐색</h2>
+ <div class="row"><button id="discover" disabled>서비스 다시 검색</button><span id="serviceCount" class="muted">연결 후 검색할 수 있습니다.</span></div>
+ <div id="services"><p class="muted">연결 후 장치가 제공하는 GATT 서비스가 표시됩니다.</p></div>
+</section>
+
+<section class="card">
+ <h2>3. IO Switcher 전원 제어</h2>
+ <div class="kv" style="margin-bottom:12px">
+  <span>제어 방식</span><strong>채널 1 + 채널 2 연동</strong>
+  <span>반전 설정</span><strong>활성화</strong>
+  <span>제어 특성</span><strong>000015ba-0000-1000-8000-00805f9b34fb</strong>
+ </div>
+ <div class="power-panel">
+  <button id="powerOn" class="power-on" disabled>전원 ON</button>
+  <button id="powerOff" class="power-off" disabled>전원 OFF</button>
+ </div>
+ <p id="powerStatus" class="muted">장치를 연결하고 제어 특성을 검색하면 사용할 수 있습니다.</p>
+ <p class="muted">반전 활성화: ON 버튼은 OFF 키(채널 1·2), OFF 버튼은 ON 키(채널 1·2)를 전송합니다. 명령 전송 완료는 실제 전원 상태 확인과 다릅니다.</p>
+</section>
+
+<div class="grid">
+<section class="card">
+ <h2>4. 선택한 특성 제어</h2>
+ <label for="charSelect">특성(Characteristic)</label>
+ <select id="charSelect" disabled><option value="">특성을 선택하세요</option></select>
+ <div id="charMeta" class="kv muted" style="margin:12px 0"><span>속성</span><span>-</span><span>UUID</span><span>-</span></div>
+ <div class="actions">
+  <button id="read" disabled>값 읽기</button>
+  <button id="notify" disabled>알림 구독</button>
+ </div>
+ <label for="writeValue">쓰기 데이터 (HEX 바이트, 예: 01 00 FF)</label>
+ <textarea id="writeValue" placeholder="예: 01 00 FF"></textarea>
+ <div class="actions"><button id="write" disabled class="primary">선택 특성에 쓰기</button></div>
+ <label for="readValue">읽기/알림 결과</label>
+ <textarea id="readValue" readonly placeholder="수신한 바이트가 여기에 표시됩니다."></textarea>
+</section>
+<section class="card">
+ <h2>5. 동작 기록</h2>
+ <div id="log" class="log">웹 클라이언트 준비 완료.\n</div>
+ <div class="actions"><button id="clearLog">기록 지우기</button></div>
+ <div class="warning" style="margin-top:14px">
+ <strong>주의:</strong> ON/OFF 명령은 업로드된 기존 Windows 프로그램에서 확인한 키 값에 맞춰 구성했습니다. 실제 장치에서 최초 테스트할 때는 스위치 부하와 주변 안전을 확인하세요.
+ </div>
+</section>
+</div>
+<section class="card">
+ <h2>브라우저 호환성 및 현재 한계</h2>
+ <ul class="muted">
+  <li>Windows PC의 Chrome/Edge에서 Web Bluetooth 사용을 권장합니다.</li>
+  <li>iPhone/iPad의 Safari는 Web Bluetooth를 지원하지 않습니다.</li>
+  <li>웹 페이지는 브라우저가 허용한 GATT 서비스만 접근할 수 있습니다. 장치 서비스 UUID가 확인되면 접근 목록을 정확히 지정해야 합니다.</li>
+  <li>기존 프로그램과 동일한 IO 버튼 동작을 완성하려면 실제 장치의 서비스 UUID, 특성 UUID, ON/OFF 명령 규칙 확인이 필요합니다.</li>
+ </ul>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let device=null, server=null, selected=null, chars=[], controlCharacteristic=null;
+const CONTROL_SERVICE='0000150b-0000-1000-8000-00805f9b34fb';
+const CONTROL_CHARACTERISTIC='000015ba-0000-1000-8000-00805f9b34fb';
+// 기존 Windows 프로그램의 pyswitcherio 키 상수
+const COMMANDS={on1:0x00,off1:0x01,on2:0x05,off2:0x03};
+// 사용자 설정: 두 채널 연동, ON/OFF 반전 활성화
+const LINK_CHANNELS=true, INVERT_COMMANDS=true;
+function log(s){const el=$('log');el.textContent+=new Date().toLocaleTimeString()+'  '+s+'\\n';el.scrollTop=el.scrollHeight}
+function status(s,kind=''){ $('state').textContent=s; $('state').className='pill status '+kind }
+function hex(bytes){return [...new Uint8Array(bytes)].map(x=>x.toString(16).padStart(2,'0').toUpperCase()).join(' ')}
+function parseHex(s){const t=s.trim();if(!t)return new Uint8Array();const parts=t.split(/[\\s,;:-]+/);if(parts.some(x=>!/^([0-9a-fA-F]{1,2})$/.test(x)))throw Error('HEX 형식이 올바르지 않습니다. 예: 01 0A FF');return new Uint8Array(parts.map(x=>parseInt(x,16)))}
+function props(c){return ['read','write','writeWithoutResponse','notify','indicate'].filter(k=>c.properties[k]).join(', ')||'속성 정보 없음'}
+function updateButtons(){
+ const ok=!!server&&!!selected;
+ $('read').disabled=!(ok&&selected.properties.read);
+ $('write').disabled=!(ok&&(selected.properties.write||selected.properties.writeWithoutResponse));
+ $('notify').disabled=!(ok&&(selected.properties.notify||selected.properties.indicate));
+ const powerReady=!!server&&!!controlCharacteristic&&
+   (controlCharacteristic.properties.write||controlCharacteristic.properties.writeWithoutResponse);
+ $('powerOn').disabled=!powerReady;
+ $('powerOff').disabled=!powerReady;
+}
+async function writeControlByte(value){
+ const data=new Uint8Array([value]);
+ if(controlCharacteristic.properties.write){
+  await controlCharacteristic.writeValueWithResponse(data);
+ }else if(controlCharacteristic.properties.writeWithoutResponse){
+  await controlCharacteristic.writeValueWithoutResponse(data);
+ }else{
+  throw Error('제어 특성이 쓰기를 지원하지 않습니다.');
+ }
+}
+async function sendLinkedPowerCommand(action){
+ const onAction=action==='ON';
+ // invert=true이면 사용자 ON/OFF 동작에 대응하는 키 쌍을 반전한다.
+ const key1=INVERT_COMMANDS?(onAction?COMMANDS.off1:COMMANDS.on1):(onAction?COMMANDS.on1:COMMANDS.off1);
+ const key2=INVERT_COMMANDS?(onAction?COMMANDS.off2:COMMANDS.on2):(onAction?COMMANDS.on2:COMMANDS.off2);
+ try{
+  if(!server||!controlCharacteristic)throw Error('전용 제어 특성을 찾지 못했습니다. 서비스 검색을 다시 실행하세요.');
+  await writeControlByte(key1);
+  if(LINK_CHANNELS){
+   await new Promise(resolve=>setTimeout(resolve,80));
+   await writeControlByte(key2);
+  }
+  const sent=[key1,...(LINK_CHANNELS?[key2]:[])].map(v=>v.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+  $('powerStatus').textContent=action+' 명령 전송 완료 (HEX: '+sent+') · 장치 상태 피드백은 별도 확인 필요';
+  log('연동 전원 '+action+' 전송 완료 / 반전='+INVERT_COMMANDS+' / HEX: '+sent);
+ }catch(e){
+  $('powerStatus').textContent=action+' 명령 전송 실패: '+e.message;
+  log('연동 전원 '+action+' 전송 실패: '+e.message);
+ }
+}
+async function disconnect(){try{if(device?.gatt?.connected)device.gatt.disconnect()}catch(e){}server=null;selected=null;chars=[];$('disconnect').disabled=true;$('discover').disabled=true;$('charSelect').disabled=true;$('read').disabled=true;$('write').disabled=true;$('notify').disabled=true;controlCharacteristic=null;updateButtons();$('powerStatus').textContent='장치 연결이 해제되었습니다.';status('연결되지 않음');$('deviceInfo').textContent='연결이 해제되었습니다.';$('services').innerHTML='<p class="muted">연결 후 장치가 제공하는 GATT 서비스가 표시됩니다.</p>';log('장치 연결 해제')}
+$('scan').onclick=async()=>{
+ if(!navigator.bluetooth){status('Web Bluetooth 미지원','err');log('이 브라우저는 Web Bluetooth를 지원하지 않습니다.');return}
+ try{
+  log('장치 선택 창 열기');
+  device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:['generic_access','generic_attribute','battery_service','device_information',CONTROL_SERVICE]});
+  device.addEventListener('gattserverdisconnected',()=>{server=null;controlCharacteristic=null;status('연결 끊김','err');$('disconnect').disabled=true;$('discover').disabled=true;updateButtons();$('powerStatus').textContent='Bluetooth 연결이 끊어졌습니다.';log('GATT 연결이 끊어졌습니다.')});
+  $('deviceInfo').innerHTML='<div class="kv"><span>장치명</span><strong></strong><span>ID</span><span></span></div>';
+  const spans=$('deviceInfo').querySelectorAll('strong, .kv span:last-child');
+  spans[0].textContent=device.name||'(이름 없음)';spans[1].textContent=device.id;
+  status('연결 중…');server=await device.gatt.connect();status('연결됨','ok');$('disconnect').disabled=false;$('discover').disabled=false;log('연결 성공: '+(device.name||device.id));await discover();
+ }catch(e){status('연결 실패','err');log('오류: '+e.message)}
+};
+async function discover(){
+ if(!server)return;
+ $('services').innerHTML='';$('charSelect').innerHTML='<option value="">특성을 선택하세요</option>';chars=[];selected=null;controlCharacteristic=null;updateButtons();
+ try{
+  const services=await server.getPrimaryServices();$('serviceCount').textContent=services.length+'개 서비스 발견';
+  // 기존 Windows 프로그램에서 확인한 IO Switcher 전용 서비스/특성을 우선 탐색
+  try{
+   const controlService=await server.getPrimaryService(CONTROL_SERVICE);
+   controlCharacteristic=await controlService.getCharacteristic(CONTROL_CHARACTERISTIC);
+   log('IO Switcher 제어 특성 확인: '+CONTROL_CHARACTERISTIC+' ('+props(controlCharacteristic)+')');
+  }catch(e){
+   controlCharacteristic=null;
+   log('IO Switcher 전용 제어 특성을 찾지 못했습니다: '+e.message);
+  }
+  updateButtons();
+  for(const svc of services){
+   const wrap=document.createElement('div');wrap.className='service';
+   const title=document.createElement('div');title.className='service-title';title.textContent='서비스: '+svc.uuid;wrap.append(title);
+   let cs=[];try{cs=await svc.getCharacteristics()}catch(e){const p=document.createElement('p');p.className='muted';p.textContent='특성 접근 실패: '+e.message;wrap.append(p)}
+   for(const c of cs){
+    const item={service:svc,characteristic:c};chars.push(item);
+    const opt=document.createElement('option');opt.value=String(chars.length-1);opt.textContent=c.uuid+' ('+props(c)+')';$('charSelect').append(opt);
+    const d=document.createElement('div');d.className='char';const b=document.createElement('strong');b.textContent=c.uuid;const sm=document.createElement('small');sm.textContent=props(c);d.append(b,sm);wrap.append(d);
+    c.addEventListener('characteristicvaluechanged',()=>{$('readValue').value=hex(c.value.buffer);log('알림 수신: '+hex(c.value.buffer))});
+   }
+   $('services').append(wrap);
+  }
+  $('charSelect').disabled=chars.length===0;$('serviceCount').textContent=services.length+'개 서비스 / '+chars.length+'개 특성';updateButtons();log('서비스 검색 완료');
+ }catch(e){$('serviceCount').textContent='검색 실패';log('서비스 검색 오류: '+e.message+' (장치 서비스 UUID 접근 권한을 확인하세요)')}
+}
+$('discover').onclick=discover;
+$('powerOn').onclick=()=>sendLinkedPowerCommand('ON');
+$('powerOff').onclick=()=>sendLinkedPowerCommand('OFF');
+$('charSelect').onchange=()=>{selected=chars[Number($('charSelect').value)]?.characteristic||null;if(selected){$('charMeta').innerHTML='';for(const [k,v] of [['속성',props(selected)],['UUID',selected.uuid]]){const a=document.createElement('span'),b=document.createElement('span');a.textContent=k;b.textContent=v;$('charMeta').append(a,b)}}updateButtons()};
+$('read').onclick=async()=>{try{const v=await selected.readValue();$('readValue').value=hex(v.buffer);log('읽기: '+hex(v.buffer))}catch(e){log('읽기 실패: '+e.message)}};
+$('write').onclick=async()=>{try{const data=parseHex($('writeValue').value);if(selected.properties.write)await selected.writeValueWithResponse(data);else await selected.writeValueWithoutResponse(data);log('쓰기 완료: '+hex(data))}catch(e){log('쓰기 실패: '+e.message)}};
+$('notify').onclick=async()=>{try{await selected.startNotifications();log('알림 구독 시작: '+selected.uuid)}catch(e){log('알림 구독 실패: '+e.message)}};
+$('disconnect').onclick=disconnect;
+$('clearLog').onclick=()=>$('log').textContent='';
+</script>
+</body></html>
